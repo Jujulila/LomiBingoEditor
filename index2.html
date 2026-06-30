@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LomiBingo</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f0f0f0;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .container {
+    position: relative;
+    width: 1104px; 
+    height: 1104px;
+    transform-origin: center center;
+    flex-shrink: 0; 
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 248px);
+    grid-template-rows: repeat(4, 248px);
+    gap: 8px;
+    padding: 44px;
+    box-sizing: border-box;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+
+  .overlay-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1104px;
+    height: 1104px;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 15px;
+    padding: 10px;
+    font-weight: bold;
+    font-size: 18px;
+    transition: background 0.2s ease, transform 0.1s ease;
+    user-select: none;
+    word-wrap: break-word;
+    border: 2px solid transparent;
+  }
+
+  /* Edit Mode Styles */
+  .editing .cell {
+    cursor: text;
+    border: 2px dashed #999;
+  }
+  .editing .cell:focus {
+    outline: none;
+    background: white;
+    border-color: #2563eb;
+  }
+
+  /* Play Mode Styles */
+  .playing .cell { cursor: pointer; }
+  .playing .cell:active { transform: scale(0.98); }
+  .playing .cell.checked { 
+    background: rgba(144, 238, 144, 0.9); 
+    text-decoration: line-through; 
+  }
+
+  .control-bar {
+    position: fixed;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 8px 16px;
+    border-radius: 30px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    backdrop-filter: blur(5px);
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 20px;
+    background-color: #2563eb;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+
+  .btn:hover { background-color: #1d4ed8; }
+  .btn-mode { background-color: #059669; }
+  .btn-mode:hover { background-color: #047857; }
+  .btn-load { background-color: #4b5563; }
+  .btn-load:hover { background-color: #374151; }
+  #fileInput { display: none; }
+</style>
+</head>
+<body class="editing">
+
+<div class="control-bar">
+  <button class="btn btn-mode" id="modeBtn" onclick="toggleMode()">Switch to Play</button>
+  <button class="btn" onclick="exportBoard()">Sauvegarder</button>
+  <button class="btn btn-load" onclick="document.getElementById('fileInput').click()">Charger</button>
+  <input type="file" id="fileInput" accept=".json" onchange="importBoard(event)">
+</div>
+
+<div class="container" id="boardContainer">
+  <div class="grid" id="bingoBoard"></div>
+  <img src="./Bingo2.png" class="overlay-image" alt="Bingo Overlay">
+</div>
+
+<script>
+  const board = document.getElementById('bingoBoard');
+  let isEditing = true;
+
+  // Initialize 32 empty cells
+  for (let i = 0; i < 32; i++) {
+    const div = document.createElement('div');
+    div.className = 'cell';
+    div.contentEditable = "true";
+    div.innerText = "Ajouter/Modifier une quête";
+    div.dataset.index = i;
+    
+    div.onclick = () => {
+      if (!isEditing) {
+        div.classList.toggle('checked');
+        saveToLocalStorage(); // Auto-save state when clicking
+      }
+    };
+    
+    // Auto-save when editing finishes
+    div.onblur = () => saveToLocalStorage(); 
+    
+    board.appendChild(div);
+  }
+
+  function toggleMode() {
+    isEditing = !isEditing;
+    const btn = document.getElementById('modeBtn');
+    const cells = document.querySelectorAll('.cell');
+    
+    if (isEditing) {
+      document.body.className = 'editing';
+      btn.innerText = "Mode Jeu";
+      cells.forEach(c => c.contentEditable = "true");
+    } else {
+      document.body.className = 'playing';
+      btn.innerText = "Mode edition";
+      cells.forEach(c => c.contentEditable = "false");
+      saveToLocalStorage(); 
+    }
+  }
+
+  function scaleBoard() {
+    const container = document.getElementById('boardContainer');
+    const scale = Math.min(window.innerWidth / 2128, window.innerHeight / 1104);
+    container.style.transform = `scale(${scale})`;
+  }
+
+  // --- SAVING AND LOADING LOGIC ---
+
+  function saveToLocalStorage() {
+    const data = [];
+    document.querySelectorAll('.cell').forEach((cell) => {
+      data.push({
+        text: cell.innerText,
+        checked: cell.classList.contains('checked')
+      });
+    });
+    localStorage.setItem('bingo_full_data', JSON.stringify(data));
+  }
+
+  function loadFromLocalStorage() {
+    const saved = localStorage.getItem('bingo_full_data');
+    if (!saved) return;
+    const data = JSON.parse(saved);
+    applyDataToBoard(data);
+  }
+
+  function applyDataToBoard(data) {
+    document.querySelectorAll('.cell').forEach((cell, i) => {
+      if (data[i]) {
+        cell.innerText = data[i].text;
+        if (data[i].checked) cell.classList.add('checked');
+        else cell.classList.remove('checked');
+      }
+    });
+  }
+
+  // Exports the whole board (text + checks)
+  function exportBoard() {
+    saveToLocalStorage(); // Ensure latest state is captured
+    const data = localStorage.getItem('bingo_full_data');
+    
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `my-bingo-board-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Imports the whole board (text + checks)
+  function importBoard(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = JSON.parse(e.target.result);
+        applyDataToBoard(data);
+        saveToLocalStorage();
+      } catch (err) {
+        alert("Invalid save file format.");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  window.addEventListener('resize', scaleBoard);
+  scaleBoard(); 
+  loadFromLocalStorage();
+</script>
+
+</body>
+</html>
